@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Betoman Test — Static prices</title>
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 24px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
+      .price { font-size: 20px; font-weight: 600; color: #228b57; }
+    </style>
+  </head>
+  <body>
+    <h1>Static price grid (USD)</h1>
+    <p>Load Betoman, turn on, pick any <code>.price</code> element.</p>
+    <div class="grid">
+      <div class="card"><div class="price">$29.99</div></div>
+      <div class="card"><div class="price">$2,000</div></div>
+      <div class="card"><div class="price">$2000</div></div>
+      <div class="card"><div class="price">US$ 1,299.99</div></div>
+      <div class="card"><div class="price">$49.00</div></div>
+      <div class="card"><div class="price">$1,050</div></div>
+    </div>
+  </body>
+</html>

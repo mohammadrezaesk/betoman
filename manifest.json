@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "BeToman",
+  "version": "0.1.9",
+  "description": "Replace foreign shopping prices with Iranian free-market Toman. No server — runs in your browser.",
+  "permissions": ["storage", "alarms", "activeTab", "scripting"],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.navasan.tech/*",
+    "http://api.navasan.tech/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "BeToman",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/inject-bootstrap.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/content/inject-bootstrap.js",
+        "src/content/content.js",
+        "src/content/panel.js",
+        "src/content/picker.js",
+        "src/content/converter.js",
+        "src/content/pattern.js",
+        "src/content/observer.js",
+        "src/shared/constants.js",
+        "src/shared/storage.js",
+        "src/shared/rates.js",
+        "src/shared/format.js",
+        "src/shared/parse-price.js",
+        "src/shared/currencies.js",
+        "src/shared/text-node.js",
+        "src/shared/peyda-styles.js",
+        "src/shared/i18n/fa.js",
+        "peyda/Peyda-Regular.ttf",
+        "peyda/Peyda-Medium.ttf",
+        "peyda/Peyda-SemiBold.ttf",
+        "peyda/Peyda-Bold.ttf",
+        "icons/toman-logo.png"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

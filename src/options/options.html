@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>تنظیمات به‌تومن</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <main>
+        <header class="page-header">
+          <div class="brand">
+            <img class="brand-icon" src="../../icons/toman-logo.png" width="48" height="48" alt="" aria-hidden="true" />
+            <div>
+              <h1>تنظیمات به‌تومن</h1>
+              <p class="muted">همه‌چیز در مرورگر شما می‌ماند — بدون سرور.</p>
+            </div>
+          </div>
+          <div class="header-actions">
+            <a href="../help/help.html" class="btn-help">راهنما</a>
+            <span id="saveStatus" class="hint save-status"></span>
+            <button type="button" id="btnSave" class="btn-save" aria-label="ذخیره تنظیمات" title="ذخیره تنظیمات">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <section class="glass card">
+          <div class="card-head">
+            <h2>API نوسان</h2>
+            <p class="note">
+              کلید API شخصی (۱۲۰ درخواست رایگان در ماه؛ نرخ‌ها هر ~۲ ساعت به‌روز می‌شوند).
+              <a href="https://www.navasan.net/api/" target="_blank" rel="noopener" class="link">وب‌سرویس نوسان</a>
+            </p>
+          </div>
+
+          <div class="card-body">
+            <div class="toggle-row glass-subtle">
+              <label class="checkbox">
+                <input type="checkbox" id="useNavasan" />
+                <span>استفاده از API نوسان برای نرخ بازار آزاد</span>
+              </label>
+            </div>
+
+            <div id="navasanFields" class="field-group">
+              <div class="field">
+                <label for="navasanApiKey">کلید API</label>
+                <input type="password" id="navasanApiKey" autocomplete="off" dir="ltr" spellcheck="false" placeholder="از بات تلگرام @navasan_contact_bot" />
+              </div>
+
+              <div class="btn-row">
+                <button type="button" id="btnTestNavasan" class="btn btn-ghost btn-inline">تست اتصال</button>
+                <span id="navasanTestResult" class="hint"></span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="glass card">
+          <div class="card-head">
+            <h2>نرخ‌ها</h2>
+            <p class="note">نرخ دستی یا آخرین دریافت از API نوسان.</p>
+          </div>
+
+          <div class="rates-tabs" role="tablist" aria-label="نرخ‌ها">
+            <button type="button" class="rates-tab active" data-tab="manual" role="tab" aria-selected="true" aria-controls="tabManual" id="tabManualBtn">
+              نرخ دستی
+            </button>
+            <button type="button" class="rates-tab" data-tab="navasan" role="tab" aria-selected="false" aria-controls="tabNavasan" id="tabNavasanBtn">
+              آخرین نرخ نوسان
+            </button>
+          </div>
+
+          <div class="card-body">
+            <div id="tabManual" class="rates-tab-panel" role="tabpanel" aria-labelledby="tabManualBtn">
+              <p class="panel-note">وقتی API خاموش است یا نوسان در دسترس نیست.</p>
+              <div class="rates-table">
+                <div class="rates-grid-head" aria-hidden="true">
+                  <span>ارز</span>
+                  <span>نام فارسی</span>
+                  <span>نرخ (تومان)</span>
+                  <span></span>
+                </div>
+                <div id="manualRates" class="rates-grid"></div>
+              </div>
+              <button type="button" id="btnAddCurrency" class="btn btn-ghost btn-inline btn-add">+ افزودن ارز</button>
+            </div>
+
+            <div id="tabNavasan" class="rates-tab-panel hidden" role="tabpanel" aria-labelledby="tabNavasanBtn" hidden>
+              <div class="navasan-toolbar">
+                <div class="navasan-meta">
+                  <span id="navasanLastFetch" class="navasan-last-fetch"></span>
+                  <span id="navasanHistoryStatus" class="hint"></span>
+                </div>
+                <button
+                  type="button"
+                  id="btnRefreshNavasan"
+                  class="btn-refresh-history"
+                  aria-label="به‌روزرسانی نرخ"
+                  title="به‌روزرسانی نرخ"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 2v6h-6"/>
+                    <path d="M3 12a9 9 0 0 1 15.6-6.36L21 8"/>
+                    <path d="M3 22v-6h6"/>
+                    <path d="M21 12a9 9 0 0 1-15.6 6.36L3 16"/>
+                  </svg>
+                </button>
+              </div>
+              <div id="navasanHistory" class="navasan-history"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="glass card">
+          <div class="card-head">
+            <h2>نمایش قیمت</h2>
+          </div>
+          <div class="card-body">
+            <div class="field">
+              <label for="label">پسوند قیمت</label>
+              <input type="text" id="label" value="تومان" />
+              <p class="field-hint">متنی که بعد از مبلغ تبدیل‌شده روی صفحات نمایش داده می‌شود.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

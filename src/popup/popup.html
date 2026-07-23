@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>به‌تومن</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="header">
+        <div class="brand">
+          <img class="brand-icon" src="../../icons/toman-logo.png" width="42" height="42" alt="" aria-hidden="true" />
+          <div>
+            <h1>به‌تومن</h1>
+            <p class="subtitle">قیمت‌های ایران روی فروشگاه‌های خارجی</p>
+          </div>
+        </div>
+      </header>
+
+      <section class="glass panel">
+        <div class="row">
+          <span class="row-label">این سایت</span>
+          <label class="switch">
+            <input type="checkbox" id="toggleActive" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <p id="siteStatus" class="hint status-hint"></p>
+      </section>
+
+      <section class="glass panel actions">
+        <button type="button" id="btnPick" class="btn btn-primary" disabled>انتخاب قیمت</button>
+        <div class="btn-row">
+          <button type="button" id="btnRepick" class="btn btn-ghost" disabled>انتخاب دوباره</button>
+          <button type="button" id="btnForget" class="btn btn-ghost" disabled>فراموش کردن</button>
+        </div>
+      </section>
+
+      <section class="glass panel rates">
+        <div class="rate-row">
+          <span class="rate-label">دلار</span>
+          <strong id="usdRate" class="rate-value">—</strong>
+        </div>
+        <p id="rateMeta" class="hint"></p>
+        <button type="button" id="btnRefresh" class="btn btn-ghost">به‌روزرسانی نرخ</button>
+      </section>
+
+      <p id="error" class="error-banner hidden"></p>
+
+      <footer>
+        <a href="#" id="linkOptions" class="link">تنظیمات</a>
+      </footer>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

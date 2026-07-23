@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Betoman Test — Split prices</title>
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 24px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
+      .product-price { font-size: 20px; font-weight: 600; color: #228b57; }
+      .product-price .currency { font-size: 14px; }
+      .css-1a2b3c_price { font-size: 18px; color: #c00; }
+    </style>
+  </head>
+  <body>
+    <h1>Split price DOM</h1>
+    <p>Pick any price — includes split spans and hashed class names.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="product-price">
+          <span class="currency">$</span><span class="whole">29</span><span class="fraction">.99</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="product-price">
+          <span>$</span><span>2,000</span>
+        </div>
+      </div>
+      <div class="card">
+        <div itemprop="price" class="css-1a2b3c_price">
+          <span>US$</span><span>1,299.99</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="css-9f8e7d_productPrice">
+          <span>$</span><span>49</span><span>.00</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="product-price">$1,050</div>
+      </div>
+      <div class="card">
+        <div class="product-price">
+          <span>$</span><span>199</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
