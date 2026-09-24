@@ -5,10 +5,11 @@ Chromium extension that **replaces** foreign shopping-site prices with Iranian *
 ## Features (v0.1.0)
 
 - Pick one price on a page → convert all matching prices
-- Smart parsing: `2,000` = `2000`, `$`, `US$`, `USD`, `€`, `£`, and more
+- Smart parsing: `2,000` = `2000`, `1.234,56`, `2'000`, `$`, `US$`, `CA$`, `USD29.99`, `€`, `£`, `₺`, Persian/Arabic digits, and more
+- Split prices (`$` / `29` / `.99` in separate spans, `$29<sup>99</sup>`), prices inside open shadow DOM, and sites that draw the currency symbol with CSS (falls back to the page's `priceCurrency` metadata)
 - Real-time conversion for scroll / lazy-loaded content (`MutationObserver`)
 - Manual rates per currency **or** your own [Navasan](https://www.navasan.net/api/) API key
-- Per-site pattern memory; toggle off restores original prices
+- Per-site pattern memory (re-applied on reload while the tab is on); toggle off restores the original text nodes exactly, without re-creating DOM that the site's framework owns
 - Checkout/cart pages skipped by default
 
 ## Install (development)
@@ -58,7 +59,8 @@ test/           Parser unit tests + HTML fixtures
 ## Tests
 
 ```bash
-npm test
+npm test               # parser + Navasan unit tests (Node only)
+npm run test:browser   # detection / convert / undo in headless Chromium (needs Playwright)
 ```
 
 Open `test/fixtures/static-usd.html` and `infinite-scroll.html` in Chrome for manual tests.

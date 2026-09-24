@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/parse-price.test.js && node test/navasan.test.js"
+    "test": "node test/parse-price.test.js && node test/navasan.test.js",
+    "test:browser": "node test/browser.test.mjs"
   }
 }

@@ -3,6 +3,8 @@ import { countMatchCandidates } from "./converter.js";
 import { MSG } from "../shared/constants.js";
 import { getCurrencyDisplayName } from "../shared/currencies.js";
 import { resolvePriceTargetAtPoint } from "../shared/text-node.js";
+import { elementsFromPointDeep } from "../shared/dom-deep.js";
+import { detectPageCurrency, detectPseudoCurrency } from "../shared/page-currency.js";
 import { fa } from "../shared/i18n/fa.js";
 
 const OVERLAY_ID = "betoman-picker-overlay";
@@ -61,6 +63,7 @@ const sitePanelCss = `
 `;
 
 /**
+ * @param {(el: Element, context: { fallbackCurrency: string | null }) => void} onPick
  * @param {() => void} onCancel
  */
 export function startPicker(onPick, onCancel) {
@@ -116,15 +119,33 @@ export function startPicker(onPick, onCancel) {
     }
   }
 
+  // Sites that print a bare "29.99" (symbol via CSS or an icon) still say
+  // which currency they use in their markup.
+  const pageCurrency = detectPageCurrency();
+
+  /** @returns {{ el: Element | null, fallbackCurrency: string | null }} */
   function pickTargetAt(e) {
+    const x = e.clientX;
+    const y = e.clientY;
     overlay.style.pointerEvents = "none";
-    const target = resolvePriceTargetAtPoint(e.clientX, e.clientY);
-    overlay.style.pointerEvents = "auto";
-    return target;
+    try {
+      const el = resolvePriceTargetAtPoint(x, y);
+      if (el) return { el, fallbackCurrency: null };
+
+      const under = elementsFromPointDeep(x, y).find((n) => !n.closest?.(`#${OVERLAY_ID}`));
+      const currency = detectPseudoCurrency(under) || pageCurrency;
+      if (currency) {
+        const bare = resolvePriceTargetAtPoint(x, y, { currency });
+        if (bare) return { el: bare, fallbackCurrency: currency };
+      }
+      return { el: under || null, fallbackCurrency: null };
+    } finally {
+      overlay.style.pointerEvents = "auto";
+    }
   }
 
   function onMouseMove(e) {
-    const target = pickTargetAt(e);
+    const { el: target } = pickTargetAt(e);
 
     if (!target || target.closest(`#${OVERLAY_ID}, #${CONFIRM_ID}, #betoman-panel-root`)) {
       clearHighlight();
@@ -142,12 +163,12 @@ export function startPicker(onPick, onCancel) {
     e.preventDefault();
     e.stopPropagation();
 
-    const target = pickTargetAt(e);
+    const { el: target, fallbackCurrency } = pickTargetAt(e);
 
     if (!target || target.closest(`#${OVERLAY_ID}`)) return;
 
     cleanup();
-    onPick(target);
+    onPick(target, { fallbackCurrency });
   }
 
   function onKeyDown(e) {
