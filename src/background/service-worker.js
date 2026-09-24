@@ -1,4 +1,4 @@
-import { MSG, MIN_MANUAL_REFRESH_MS } from "../shared/constants.js";
+import { MSG, MIN_MANUAL_REFRESH_MS, STORAGE_KEYS } from "../shared/constants.js";
 import {
   initDefaultsOnInstall,
   getPrefs,
@@ -61,6 +61,13 @@ async function broadcastRatesUpdated() {
     }
   }
 }
+
+// Manual rates / label edited in Settings → re-price open tabs right away.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[STORAGE_KEYS.PREFS]) {
+    broadcastRatesUpdated();
+  }
+});
 
 chrome.runtime.onInstalled.addListener(async () => {
   await initDefaultsOnInstall();

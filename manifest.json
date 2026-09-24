@@ -54,6 +54,8 @@
         "src/shared/parse-price.js",
         "src/shared/currencies.js",
         "src/shared/text-node.js",
+        "src/shared/dom-deep.js",
+        "src/shared/page-currency.js",
         "src/shared/peyda-styles.js",
         "src/shared/i18n/fa.js",
         "peyda/Peyda-Regular.ttf",

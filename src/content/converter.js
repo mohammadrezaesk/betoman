@@ -2,6 +2,7 @@ import {
   parsePrice,
   isSkippableElement,
   isPlausiblePrice,
+  hasSingleNumber,
 } from "../shared/parse-price.js";
 import { formatToman } from "../shared/format.js";
 import { ensurePeydaStyles } from "../shared/peyda-styles.js";
@@ -9,49 +10,73 @@ import {
   getLeafText,
   getCompositeText,
   toPriceLeaf,
+  readSiteText,
+  hasConversionRecord,
   replacePriceTargetText,
   restorePriceTargetText,
 } from "../shared/text-node.js";
+import { querySelectorAllDeep } from "../shared/dom-deep.js";
 import { findMatchingElements } from "./pattern.js";
 
 const DATA_ATTR = "data-betoman";
 const ORIGINAL_ATTR = "data-betoman-original";
 const COMPOSITE_ATTR = "data-betoman-composite";
+const ERROR_ATTR = "data-betoman-error";
 
+/**
+ * Everything converted in this context — shadow-DOM elements included, which
+ * document.querySelectorAll can't find on undo.
+ * @type {Set<Element>}
+ */
+const converted = new Set();
+
+/**
+ * The confirm dialog lets people say "the $ on this site means CAD". That
+ * override remaps the currency learned from the picked price only — an
+ * explicit "€5" elsewhere on the page is still euros.
+ */
 function conversionCurrency(pattern, parsed) {
-  return pattern.currency || parsed.currency;
+  const learned = pattern.hints?.currency;
+  if (pattern.currency && (!learned || parsed.currency === learned)) return pattern.currency;
+  return parsed.currency;
 }
 
 function getTargetText(el, composite) {
   return composite ? getCompositeText(el) : getLeafText(el);
 }
 
-/** @param {Element} fromEl @param {object} pattern */
-function findNearbyForeignPrice(fromEl, pattern) {
-  let container = fromEl.parentElement;
-
-  for (let depth = 0; container && depth < 4; depth++, container = container.parentElement) {
-    for (const node of container.children) {
-      if (node.nodeType !== Node.ELEMENT_NODE || node === fromEl) continue;
-      if (node.hasAttribute(DATA_ATTR)) continue;
-
-      const composite = node.childElementCount > 0;
-      const text = composite ? getCompositeText(node) : getLeafText(node);
-      if (!text || text.length > 40) continue;
-
-      let parsed = parsePrice(text, pattern.hints);
-      if (!parsed) parsed = parsePrice(text);
-      if (!parsed || !isPlausiblePrice(parsed.amount, parsed.currency)) continue;
-
-      return { text, parsed };
-    }
-  }
-
-  return null;
+function parseForPattern(text, pattern) {
+  if (!text) return null;
+  const parsed = parsePrice(text, pattern.hints) || parsePrice(text);
+  return parsed && isPlausiblePrice(parsed.amount, parsed.currency) ? parsed : null;
 }
 
 /**
- * Re-convert when the site updates an already-converted price (e.g. variant hover).
+ * @param {Element} el
+ * @param {string} originalText — what the site shows (stored for reconvert / fallback undo)
+ * @param {object} parsed
+ * @param {boolean} composite
+ */
+function writeConversion(el, originalText, parsed, rates, pattern, label, composite) {
+  const currency = conversionCurrency(pattern, parsed);
+  const rate = rates[currency];
+  if (!rate) {
+    el.setAttribute(ERROR_ATTR, `No rate for ${currency}`);
+    return false;
+  }
+
+  replacePriceTargetText(el, formatToman(parsed.amount * rate, label), composite, pattern.hints);
+  el.setAttribute(ORIGINAL_ATTR, originalText);
+  el.setAttribute(DATA_ATTR, "1");
+  if (composite) el.setAttribute(COMPOSITE_ATTR, "1");
+  el.removeAttribute(ERROR_ATTR);
+  converted.add(el);
+  return true;
+}
+
+/**
+ * Re-convert when the site updates an already-converted price (variant
+ * switch, quantity change, React re-render of one text node).
  * @param {Element} el
  * @param {Record<string, number>} rates
  * @param {object} pattern
@@ -60,62 +85,22 @@ function findNearbyForeignPrice(fromEl, pattern) {
 export function syncConvertedElement(el, rates, pattern, label = "تومان") {
   if (!el?.hasAttribute(DATA_ATTR)) return false;
 
-  ensurePeydaStyles();
   const composite = el.hasAttribute(COMPOSITE_ATTR);
+  const siteText = readSiteText(el, composite);
+  // No record → converted by an earlier extension context; we can't tell our
+  // text from the site's, so leave it.
+  if (siteText == null) return false;
+  if (siteText === el.getAttribute(ORIGINAL_ATTR)) return false;
 
-  const knownOriginal = el.getAttribute(ORIGINAL_ATTR);
-
-  const currentDisplayed = getTargetText(el, composite);
-  if (!currentDisplayed) return false;
-
-  if (currentDisplayed.includes(label)) return false;
-
-  if (currentDisplayed === knownOriginal) return false;
-
-  let parsed = parsePrice(currentDisplayed, pattern.hints);
-  if (!parsed) parsed = parsePrice(currentDisplayed);
-  if (!parsed || !isPlausiblePrice(parsed.amount, parsed.currency)) {
-    const nearby = findNearbyForeignPrice(el, pattern);
-    if (!nearby) return false;
-    parsed = nearby.parsed;
+  const parsed = parseForPattern(siteText, pattern);
+  if (!parsed) {
+    // The site replaced the price with something else ("Sold out") — step aside.
+    restoreElement(el);
+    return false;
   }
 
-  const rate = rates[conversionCurrency(pattern, parsed)];
-  if (!rate) return false;
-
-  const tomanText = formatToman(parsed.amount * rate, label);
-
-  if (currentDisplayed === tomanText) return false;
-
-  el.setAttribute(ORIGINAL_ATTR, currentDisplayed);
-  replacePriceTargetText(el, tomanText, composite);
-  return true;
-}
-
-/** @param {Element[]} roots */
-export function syncConvertedPricesInRoots(roots, pattern, rates, label = "تومان") {
-  if (!roots?.length) return 0;
-
-  const seen = new Set();
-  let synced = 0;
-
-  for (const root of roots) {
-    if (root.nodeType !== Node.ELEMENT_NODE) continue;
-
-    const batch = root.hasAttribute(DATA_ATTR)
-      ? [root, ...root.querySelectorAll(`[${DATA_ATTR}]`)]
-      : [...root.querySelectorAll(`[${DATA_ATTR}]`)];
-
-    for (const el of batch) {
-      if (seen.has(el)) continue;
-      seen.add(el);
-      const currentText = getTargetText(el, el.hasAttribute(COMPOSITE_ATTR));
-      if (currentText?.includes(label)) continue;
-      if (syncConvertedElement(el, rates, pattern, label)) synced++;
-    }
-  }
-
-  return synced;
+  ensurePeydaStyles();
+  return writeConversion(el, siteText, parsed, rates, pattern, label, composite);
 }
 
 /**
@@ -125,126 +110,103 @@ export function syncConvertedPricesInRoots(roots, pattern, rates, label = "تو�
  * @param {string} label
  */
 export function convertElement(el, rates, pattern, label = "تومان") {
-  ensurePeydaStyles();
-  const composite = el.hasAttribute(COMPOSITE_ATTR) || !!pattern.composite;
-  const target = composite ? el : toPriceLeaf(el) || el;
+  const composite = !!pattern.composite;
+  const target = composite ? el : toPriceLeaf(el, pattern.hints) || el;
   if (!target || isSkippableElement(target) || target.hasAttribute(DATA_ATTR)) return false;
+  if (target.querySelector(`[${DATA_ATTR}]`)) return false;
 
   const text = getTargetText(target, composite);
-  if (!text) return false;
+  if (!text || text.length > 80) return false;
+  if (composite && !hasSingleNumber(text)) return false;
 
-  let parsed = parsePrice(text, pattern.hints);
-  if (!parsed) parsed = parsePrice(text);
+  const parsed = parseForPattern(text, pattern);
   if (!parsed) return false;
 
-  const rate = rates[conversionCurrency(pattern, parsed)];
-  if (!rate) {
-    target.setAttribute("data-betoman-error", `No rate for ${conversionCurrency(pattern, parsed)}`);
-    return false;
-  }
-
-  const toman = parsed.amount * rate;
-  target.setAttribute(ORIGINAL_ATTR, text);
-  target.setAttribute(DATA_ATTR, "1");
-  if (composite) target.setAttribute(COMPOSITE_ATTR, "1");
-  target.removeAttribute("data-betoman-error");
-  replacePriceTargetText(target, formatToman(toman, label), composite);
-  return true;
+  ensurePeydaStyles();
+  return writeConversion(target, text, parsed, rates, pattern, label, composite);
 }
 
 export function restoreElement(el) {
-  if (!el?.hasAttribute(DATA_ATTR)) return;
+  if (!el) return;
+  converted.delete(el);
+  if (!el.hasAttribute(DATA_ATTR)) return;
 
-  const original = el.getAttribute(ORIGINAL_ATTR);
-  if (original == null) return;
-
-  const composite = el.hasAttribute(COMPOSITE_ATTR);
-  restorePriceTargetText(el, original, composite);
+  restorePriceTargetText(el, hasConversionRecord(el) ? null : el.getAttribute(ORIGINAL_ATTR));
   el.removeAttribute(DATA_ATTR);
   el.removeAttribute(ORIGINAL_ATTR);
   el.removeAttribute(COMPOSITE_ATTR);
-  el.removeAttribute("data-betoman-error");
+  el.removeAttribute(ERROR_ATTR);
 }
 
 export function restoreAll() {
-  document.querySelectorAll(`[${DATA_ATTR}]`).forEach(restoreElement);
+  for (const el of [...converted]) restoreElement(el);
+  converted.clear();
+  // Leftovers from a previous extension context (update / reload).
+  querySelectorAllDeep(`[${DATA_ATTR}]`).forEach(restoreElement);
+  querySelectorAllDeep(`[${ERROR_ATTR}]`).forEach((el) => el.removeAttribute(ERROR_ATTR));
+}
+
+function pruneDisconnected() {
+  for (const el of converted) {
+    if (!el.isConnected) converted.delete(el);
+  }
+}
+
+/** Converted elements in, under or around the mutated roots. */
+function convertedNear(roots) {
+  const out = new Set();
+  for (const root of roots) {
+    if (root.nodeType !== Node.ELEMENT_NODE || !root.isConnected) continue;
+    const up = root.closest(`[${DATA_ATTR}]`);
+    if (up) out.add(up);
+    for (const el of converted) {
+      if (root.contains(el)) out.add(el);
+    }
+  }
+  return out;
 }
 
 /**
  * @param {object} pattern
  * @param {Record<string, number>} rates
  * @param {string} label
- * @param {Element[]} [rootElements]
+ * @param {Element[]} [rootElements] — limit work to these mutated subtrees
  */
 export function convertAll(pattern, rates, label = "تومان", rootElements = null) {
-  let elements;
+  pruneDisconnected();
 
-  if (rootElements?.length) {
-    syncConvertedPricesInRoots(rootElements, pattern, rates, label);
-
-    const seen = new Set();
-    elements = [];
-    for (const root of rootElements) {
-      if (root.nodeType !== Node.ELEMENT_NODE) continue;
-      const batch =
-        root.matches?.(pattern.selector)
-          ? [root, ...root.querySelectorAll(pattern.selector)]
-          : [...root.querySelectorAll(pattern.selector)];
-      for (const el of batch) {
-        const target = pattern.composite ? el : toPriceLeaf(el);
-        if (target && !seen.has(target)) {
-          seen.add(target);
-          elements.push(target);
-        }
-      }
-    }
-    elements = elements.filter((target) => {
-      if (target.hasAttribute(DATA_ATTR)) return false;
-      const text = getTargetText(target, !!pattern.composite);
-      let parsed = parsePrice(text, pattern.hints);
-      if (!parsed) parsed = parsePrice(text);
-      return parsed && isPlausiblePrice(parsed.amount, parsed.currency);
-    });
-  } else {
-    document.querySelectorAll(`[${DATA_ATTR}]`).forEach((el) => {
-      syncConvertedElement(el, rates, pattern, label);
-    });
-    elements = findMatchingElements(pattern.selector, pattern);
+  const roots = rootElements?.length ? rootElements : null;
+  const toSync = roots ? convertedNear(roots) : [...converted];
+  for (const el of toSync) {
+    syncConvertedElement(el, rates, pattern, label);
   }
 
-  let converted = 0;
-  for (const el of elements) {
-    if (convertElement(el, rates, pattern, label)) converted++;
+  let count = 0;
+  for (const el of findMatchingElements(pattern.selector, pattern, roots)) {
+    if (convertElement(el, rates, pattern, label)) count++;
   }
-  return converted;
+  return count;
 }
 
 /**
+ * Re-price everything already converted (rates changed).
  * @param {object} pattern
  * @param {Record<string, number>} rates
  * @param {string} label
  */
 export function reconvertAll(pattern, rates, label = "تومان") {
-  const elements = document.querySelectorAll(`[${DATA_ATTR}]`);
-  let converted = 0;
+  pruneDisconnected();
+  let count = 0;
 
-  for (const el of elements) {
+  for (const el of [...converted]) {
     const original = el.getAttribute(ORIGINAL_ATTR);
-    if (!original) continue;
-
-    let parsed = parsePrice(original, pattern.hints);
-    if (!parsed) parsed = parsePrice(original);
+    const parsed = parseForPattern(original, pattern);
     if (!parsed) continue;
-
-    const rate = rates[conversionCurrency(pattern, parsed)];
-    if (!rate) continue;
-
     const composite = el.hasAttribute(COMPOSITE_ATTR);
-    replacePriceTargetText(el, formatToman(parsed.amount * rate, label), composite);
-    converted++;
+    if (writeConversion(el, original, parsed, rates, pattern, label, composite)) count++;
   }
 
-  return converted;
+  return count;
 }
 
 export function countMatchCandidates(pattern) {

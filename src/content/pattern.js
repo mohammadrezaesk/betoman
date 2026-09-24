@@ -3,6 +3,7 @@ import {
   parsePrice,
   isPlausiblePrice,
   buildLoosePattern,
+  hasSingleNumber,
 } from "../shared/parse-price.js";
 import {
   getLeafText,
@@ -10,9 +11,24 @@ import {
   toPriceLeaf,
   resolvePriceTarget,
 } from "../shared/text-node.js";
+import { querySelectorAllDeep } from "../shared/dom-deep.js";
 
-const DYNAMIC_CLASS_RE =
-  /^(?:css-[a-z0-9]+|_[a-zA-Z0-9]+|sc-[a-zA-Z0-9]+|[a-z]{1,2}[A-Z][a-zA-Z0-9_-]{3,}|[a-f0-9]{6,})$/i;
+/** Build-tool generated class names that change between deploys. */
+const DYNAMIC_CLASS_PATTERNS = [
+  /^css-[a-z0-9]+/i, // emotion
+  /^sc-[a-zA-Z0-9]+$/, // styled-components
+  /^jsx-\d+$/, // styled-jsx
+  /^_[a-zA-Z0-9_-]+$/, // hashed CSS modules
+  /^[a-f0-9]{6,}$/i, // bare hashes
+  /__[a-zA-Z0-9_-]*\d[a-zA-Z0-9_-]*$/, // CSS modules "Card_price__x7Kq2"
+  /-\d{2,}$/, // makeStyles "price-123"
+  /^(?=[a-zA-Z0-9]*\d)(?=[a-zA-Z0-9]*[a-zA-Z])[a-zA-Z0-9]{5,10}$/, // short random "e1x2y3z"
+  /^betoman-/, // our own highlight
+];
+
+function isDynamicClass(className) {
+  return DYNAMIC_CLASS_PATTERNS.some((re) => re.test(className));
+}
 
 const PRICE_CLASS_TOKENS = [
   "price",
@@ -43,7 +59,7 @@ const STABLE_ATTRS = [
 ];
 
 function isStableClass(className) {
-  return className && !DYNAMIC_CLASS_RE.test(className) && !/^\d/.test(className);
+  return className && !isDynamicClass(className) && !/^\d/.test(className);
 }
 
 function elementSelectorPart(el, { withNth = false } = {}) {
@@ -108,6 +124,7 @@ function generatePartialClassSelectors(el) {
 function isValidPriceTarget(el, hints, composite, matchCurrency = null) {
   const text = composite ? getCompositeText(el) : getLeafText(el);
   if (!text || text.length > 80) return false;
+  if (composite && !hasSingleNumber(text)) return false;
 
   let parsed = parsePrice(text, hints);
   if (!parsed) parsed = parsePrice(text);
@@ -120,7 +137,7 @@ function isValidPriceTarget(el, hints, composite, matchCurrency = null) {
 function countPriceMatches(selector, hints, matchCurrency, composite) {
   let nodes;
   try {
-    nodes = document.querySelectorAll(selector);
+    nodes = querySelectorAllDeep(selector);
   } catch {
     return { count: 0, priceCount: 0, targets: [] };
   }
@@ -137,7 +154,7 @@ function countPriceMatches(selector, hints, matchCurrency, composite) {
       continue;
     }
 
-    const leaf = toPriceLeaf(el);
+    const leaf = toPriceLeaf(el, hints);
     if (!leaf || targets.has(leaf)) continue;
     if (!isValidPriceTarget(leaf, hints, false, matchCurrency)) continue;
     targets.add(leaf);
@@ -186,12 +203,8 @@ function scoreSelector(selector, priceEl, hints, matchCurrency, composite) {
   if (priceCount === 1) {
     const only = targets[0];
     if (only && only !== priceEl && priceEl.contains(only)) score += 30;
-    try {
-      const match = document.querySelector(selector);
-      if (match && match.childElementCount > 0 && !composite) score -= 80;
-    } catch {
-      /* ignore */
-    }
+    const match = targets[0] && querySelectorAllDeep(selector)[0];
+    if (match && match.childElementCount > 0 && !composite) score -= 80;
   }
 
   return score;
@@ -282,16 +295,21 @@ export function generateSelector(priceEl, hints, matchCurrency, composite = fals
 
 /**
  * @param {Element} pickedEl
+ * @param {string | null} [fallbackCurrency] — page currency for sites that
+ *   show bare numbers (symbol drawn by CSS / an icon)
  */
-export function learnPatternFromElement(pickedEl) {
-  const target = resolvePriceTarget(pickedEl);
+export function learnPatternFromElement(pickedEl, fallbackCurrency = null) {
+  const fallbackHints = fallbackCurrency ? { currency: fallbackCurrency } : {};
+  const target =
+    resolvePriceTarget(pickedEl) ||
+    (fallbackCurrency ? resolvePriceTarget(pickedEl, fallbackHints) : null);
   if (!target) return null;
 
   if (target.composite) {
     const leaf = toPriceLeaf(target.el);
     if (leaf) {
       const leafText = getLeafText(leaf);
-      const hints = learnFromSample(leafText);
+      const hints = learnFromSample(leafText, fallbackCurrency);
       if (hints) {
         return rebuildPatternFromPick(leaf, hints, hints.currency, {
           el: leaf,
@@ -302,7 +320,7 @@ export function learnPatternFromElement(pickedEl) {
     }
   }
 
-  const hints = learnFromSample(target.text);
+  const hints = learnFromSample(target.text, fallbackCurrency);
   if (!hints) return null;
 
   return rebuildPatternFromPick(pickedEl, hints, hints.currency, target);
@@ -349,10 +367,10 @@ export function rebuildPatternFromPick(pickedEl, hints, currency, knownTarget = 
  * @param {string} selector
  * @param {object} pattern
  */
-export function findMatchingElements(selector, pattern) {
+export function findMatchingElements(selector, pattern, roots = null) {
   let nodes;
   try {
-    nodes = document.querySelectorAll(selector);
+    nodes = roots ? queryWithinRoots(selector, roots) : querySelectorAllDeep(selector);
   } catch {
     return [];
   }
@@ -367,18 +385,38 @@ export function findMatchingElements(selector, pattern) {
     if (composite) {
       if (!isValidPriceTarget(el, pattern.hints, true)) continue;
     } else {
-      const leaf = toPriceLeaf(el);
+      const leaf = toPriceLeaf(el, pattern.hints);
       if (!leaf) continue;
       target = leaf;
       if (!isValidPriceTarget(leaf, pattern.hints, false)) continue;
     }
 
     if (seen.has(target) || target.hasAttribute("data-betoman")) continue;
+    // Don't convert a container whose price was already converted inside it.
+    if (target.querySelector("[data-betoman]")) continue;
     seen.add(target);
     results.push(target);
   }
 
   return results;
+}
+
+/**
+ * Elements matching `selector` in or around mutated roots — including the
+ * matching ancestor, so an edit deep inside a price (a re-rendered span)
+ * still reaches the element the pattern selects.
+ * @param {string} selector
+ * @param {Element[]} roots
+ */
+function queryWithinRoots(selector, roots) {
+  const out = new Set();
+  for (const root of roots) {
+    if (root.nodeType !== Node.ELEMENT_NODE || !root.isConnected) continue;
+    const up = root.closest(selector);
+    if (up) out.add(up);
+    for (const el of querySelectorAllDeep(selector, root)) out.add(el);
+  }
+  return [...out];
 }
 
 export { resolvePriceTarget as resolvePriceElement };

@@ -38,7 +38,13 @@ function initBetomanContent() {
     return CHECKOUT_BLOCKLIST.some((re) => re.test(path));
   }
 
+  /** False once the extension is reloaded/updated and this script is orphaned. */
+  function extensionAlive() {
+    return !!chrome.runtime?.id;
+  }
+
   async function fetchRates() {
+    if (!extensionAlive()) return null;
     const response = await chrome.runtime.sendMessage({ type: MSG.GET_RATES });
     if (response?.ok) {
       rates = response.rates;
@@ -48,13 +54,36 @@ function initBetomanContent() {
     return null;
   }
 
+  /** Run DOM edits without our own writes coming back as mutations. */
+  function silently(fn) {
+    return domObserver ? domObserver.runSilently(fn) : fn();
+  }
+
+  let ratesLoaded = false;
+
   async function applyConversion(rootElements = null) {
     if (!active || !pattern || isCheckoutUrl()) return 0;
 
-    await fetchRates();
-    const count = convertAll(pattern, rates, label, rootElements);
+    try {
+      // Mutation batches reuse cached rates; RATES_UPDATED refreshes them.
+      if (!rootElements || !ratesLoaded) {
+        ratesLoaded = !!(await fetchRates());
+      }
+    } catch (err) {
+      if (!extensionAlive()) {
+        stopObserver();
+        return 0;
+      }
+      throw err;
+    }
+
+    // Turned off (or navigated to checkout) while waiting for rates.
+    if (!active || !pattern || isCheckoutUrl()) return 0;
+
+    const currentPattern = pattern;
+    const count = silently(() => convertAll(currentPattern, rates, label, rootElements));
     log(`Converted ${count} prices`);
-    panel.refresh();
+    if (!rootElements) panel.refresh();
     return count;
   }
 
@@ -62,7 +91,9 @@ function initBetomanContent() {
     domObserver?.stop();
     domObserver = createDomObserver({
       onMutations: (roots) => {
-        if (active && pattern) applyConversion(roots);
+        if (active && pattern) {
+          applyConversion(roots).catch((err) => console.error("[Betoman]", err));
+        }
       },
     });
     domObserver.start();
@@ -90,6 +121,20 @@ function initBetomanContent() {
     panel.refresh();
   }
 
+  /** Re-enable on reload when this tab was left on (state lives in the service worker). */
+  async function restoreTabState() {
+    try {
+      const state = await chrome.runtime.sendMessage({ type: MSG.GET_TAB_STATE });
+      // Only sites with a saved pattern come back on; others stay off.
+      if (state?.ok && state.active && !active) {
+        await tryAutoApplySavedPattern();
+        panel.refresh();
+      }
+    } catch {
+      /* service worker unavailable — stay off */
+    }
+  }
+
   async function tryAutoApplySavedPattern() {
     if (isCheckoutUrl()) return;
 
@@ -102,8 +147,8 @@ function initBetomanContent() {
     }
   }
 
-  async function handlePick(element) {
-    const learned = learnPatternFromElement(element);
+  async function handlePick(element, context = {}) {
+    const learned = learnPatternFromElement(element, context.fallbackCurrency);
     if (!learned) {
       alert(fa.alerts.noPrice);
       panel.show();
@@ -135,7 +180,7 @@ function initBetomanContent() {
   function startPickMode() {
     stopPicker();
     pickerCleanup = startPicker(
-      (el) => handlePick(el),
+      (el, context) => handlePick(el, context),
       () => {
         pickerCleanup = null;
         panel.show();
@@ -146,7 +191,7 @@ function initBetomanContent() {
   function handleSpaNavigation() {
     if (!active) return;
     if (isCheckoutUrl()) {
-      restoreAll();
+      silently(() => restoreAll());
       return;
     }
     if (pattern) {
@@ -270,7 +315,11 @@ function initBetomanContent() {
           case MSG.RATES_UPDATED:
             if (active && pattern) {
               await fetchRates();
-              requestAnimationFrame(() => reconvertAll(pattern, rates, label));
+              requestAnimationFrame(() => {
+                if (active && pattern && !isCheckoutUrl()) {
+                  silently(() => reconvertAll(pattern, rates, label));
+                }
+              });
             }
             panel.refresh();
             sendResponse({ ok: true });
@@ -288,4 +337,9 @@ function initBetomanContent() {
   });
 
   watchSpaNavigation(handleSpaNavigation);
+
+  // A previous copy of this script (before an extension reload/update) may
+  // have left converted prices behind; put them back before starting fresh.
+  restoreAll();
+  restoreTabState();
 }
