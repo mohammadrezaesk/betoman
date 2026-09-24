@@ -151,6 +151,24 @@ main {
   font-size: inherit;
 }
 
+.contact-row {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  font-size: 13px;
+}
+
+.contact-label {
+  color: var(--text-muted);
+}
+
+.contact-email {
+  font-weight: 600;
+  word-break: break-all;
+}
+
 .toggle-row {
   padding: 14px 16px;
   margin-bottom: 18px;
